@@ -1,5 +1,10 @@
+require "sinatra"
+require "pry"
+
 class BackendApp < Sinatra::Base
   get "/" do
-    "Hello World!"
+    Clients::Mutalyzer.test
   end
 end
+
+require_relative "clients/mutalyzer"
