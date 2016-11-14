@@ -17,20 +17,18 @@ class BackendApp < Sinatra::Base
       content_type :json
 
       variant = params[:variant]
-      build = params[:build]
       transcript = params[:transcript]
 
-      detail_info = Services::DetailInfo.new(transcript, variant, build)
+      detail_info = Services::DetailInfo.new(transcript, variant)
       detail_info.get_info
     end
 
     get "/variants" do
       content_type :json
 
-      build = params[:build]
       transcript = params[:transcript]
 
-      Services::VariantsInfo.new(build, transcript).get_info
+      Services::VariantsInfo.new(transcript).get_info
     end
   end
 end
