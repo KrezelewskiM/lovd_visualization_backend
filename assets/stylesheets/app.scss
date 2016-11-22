@@ -1,0 +1,44 @@
+#variants-visualization {
+  line {
+    stroke: black;
+    stroke-width: 2;
+  }
+
+  rect {
+    &.exon {
+
+    }
+
+    &.utr {
+      fill: grey;
+    }
+
+    &.del {
+      fill: #A8050E;
+    }
+
+    &.subst {
+      fill: #071AC8;
+    }
+
+    &.dup {
+      fill: #FD9827;
+    }
+
+    &.delins {
+      fill: #985CFB;
+    }
+
+    &.ins {
+      fill: #149718;
+    }
+
+    &.inv {
+      fill: #1BAACA;
+    }
+
+    &.con {
+      fill: #ECC14D;
+    }
+  }
+}
