@@ -4,7 +4,7 @@
     stroke-width: 2;
   }
 
-  rect {
+  rect, polyline {
     &.exon {
 
     }
@@ -39,6 +39,10 @@
 
     &.con {
       fill: #ECC14D;
+    }
+
+    &.frameshift {
+      fill: red;
     }
   }
 }

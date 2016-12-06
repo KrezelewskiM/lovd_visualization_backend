@@ -1,15 +1,16 @@
 var create_visualization = function() {
   var dataset;
   var transcript_id = getUrlParameter('transcript');
+  var base_url = "http://localhost/src/variants/";
 
   var plot_data = function(data) {
     // Change these to fine-tune graph
     var margin = { top: 20, right: 10, bottom: 20, left: 10 };
-    var width = 960.0 - margin.left - margin.right;
+    var width = 1200 - margin.left - margin.right;
     var lane_height = 150;
-    var lane_vertical_margin = 20;
+    var lane_vertical_margin = 5;
     var domain_padding = 1000;
-    var exon_on_screen_percentage = 0.8;
+    var exon_on_screen_percentage = 0.7;
     var minimum_width = 2;
     //////////////////////////////////
 
@@ -105,7 +106,44 @@ var create_visualization = function() {
       .append("g")
         .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
-    var plot_graph_element = function(element, lane_y, element_height, element_class) {
+    var draw_rectangle = function(x, y, width, height, rect_class, url) {
+      var parent_container = svg;
+
+      if (url) {
+        parent_container = parent_container.append("a")
+              .attr("xlink:href", url)
+              .attr("target", "_blank")
+      }
+
+      parent_container.append("rect")
+          .attr("class", rect_class)
+          .attr("x", x)
+          .attr("y", y)
+          .attr("width", width)
+          .attr("height", height);
+    }
+
+    var draw_triangle = function(points, triangle_class, url) {
+      var parent_container = svg;
+
+      if (url) {
+        parent_container = parent_container.append("a")
+              .attr("xlink:href", url)
+              .attr("target", "_blank")
+      }
+
+      parent_container.append('polyline')
+              .attr('points', points)
+              .attr("class", triangle_class)
+    }
+
+    var convert_triangle_coordinates = function(points_array) {
+      return $.map(points_array, function( val, i ) {
+            return val.join(' ');
+          }).join(', ');
+    }
+
+    var plot_graph_element = function(element, lane_y, element_height, element_class, is_change) {
       var x1 = x_scale(element.start);
       var x2 = x_scale(element.stop);
 
@@ -114,12 +152,28 @@ var create_visualization = function() {
         scaled_width = minimum_width;
       }
 
-      svg.append("rect")
-          .attr("class", element_class)
-          .attr("x", x1)
-          .attr("y", lane_y - element_height / 2)
-          .attr("width", scaled_width)
-          .attr("height", element_height);
+      if (is_change) {
+        if (element_class != "ins") {
+          draw_rectangle(x1, lane_y - element_height / 2, scaled_width, element_height, element_class, base_url + element.url);
+        } else {
+          var centre = x_scale(element.start + (element.stop - element.start) / 2)
+          var base_y = lane_y - element_height / 2 - 5;
+
+          var triangle_points = [[centre - 5, base_y], [centre + 5, base_y], [centre, base_y - 10], [centre - 5, base_y]];
+
+          draw_triangle(convert_triangle_coordinates(triangle_points), element_class, base_url + element.url);
+        }
+
+        if (element.frameshift) {
+          var base_x = x1;
+          var upper_y = lane_y + element_height / 2 + 15;
+          var triangle_points = [[base_x, upper_y], [base_x, upper_y - 10], [base_x + 10, upper_y - 5], [base_x, upper_y]];
+
+          draw_triangle(convert_triangle_coordinates(triangle_points), "frameshift", false);
+        }
+      } else {
+        draw_rectangle(x1, lane_y - element_height / 2, scaled_width, element_height, element_class, false);
+      }
     }
 
     // Plot axes
@@ -143,10 +197,10 @@ var create_visualization = function() {
 
       if (start >= utr5_stop && stop <= utr3_start) {
         // completely outside utrs
-        plot_graph_element(exon, exon_lane_y, exon_height, "exon");
+        plot_graph_element(exon, exon_lane_y, exon_height, "exon", false);
       } else if (stop <= utr5_stop || start >= utr3_start) {
         // completely inside utrs
-        plot_graph_element(exon, exon_lane_y, exon_in_utr_height, "exon");
+        plot_graph_element(exon, exon_lane_y, exon_in_utr_height, "exon", false);
       } else {
         // intersecting with utrs
 
@@ -165,8 +219,8 @@ var create_visualization = function() {
           intersection.stop = stop;
         }
 
-        plot_graph_element(rest, exon_lane_y, exon_height, "exon");
-        plot_graph_element(intersection, exon_lane_y, exon_in_utr_height, "exon");
+        plot_graph_element(rest, exon_lane_y, exon_height, "exon", false);
+        plot_graph_element(intersection, exon_lane_y, exon_in_utr_height, "exon", false);
       }
     }
 
@@ -176,8 +230,8 @@ var create_visualization = function() {
     }
 
     // Plot utrs
-    plot_graph_element(data.utr5, exon_lane_y, utr_height, "utr");
-    plot_graph_element(data.utr3, exon_lane_y, utr_height, "utr");
+    plot_graph_element(data.utr5, exon_lane_y, utr_height, "utr", false);
+    plot_graph_element(data.utr3, exon_lane_y, utr_height, "utr", false);
 
     // Plot changes
 
@@ -208,10 +262,16 @@ var create_visualization = function() {
 
         for (var k = 0 ; k < lane_changes.length ; k++) {
           // find out if new change is intersecting with previous change
-          var existing_start = lane_changes[k][0];
-          var existing_stop = lane_changes[k][1];
+          var existing_start = Math.floor(x_scale(lane_changes[k][0]));
+          var existing_stop = Math.floor(x_scale(lane_changes[k][1]));
+          var graph_start = Math.floor(x_scale(start));
+          var graph_stop = Math.floor(x_scale(stop));
 
-          if ((start >= existing_start && start <= existing_stop) || (stop >= existing_start && stop <= existing_stop)) {
+          if (graph_stop < graph_start + 2) {
+            graph_stop = graph_start + 2;
+          }
+
+          if ((graph_start >= existing_start && graph_start <= existing_stop) || (graph_stop >= existing_start && graph_stop <= existing_stop) || graph_start == existing_start || graph_start == existing_stop || graph_stop == existing_start || graph_stop == existing_stop) {
             // intersecting
             intersecting = true;
             break;
@@ -249,7 +309,7 @@ var create_visualization = function() {
 
       VariantsApp.change_lanes[lane_index - 1].push([start, stop]);
       var changes_lane_y = lane_y_position(lane_index);
-      plot_graph_element(change, changes_lane_y, change_height, change.type);
+      plot_graph_element(change, changes_lane_y, change_height, change.type, true);
     }
   }
 
