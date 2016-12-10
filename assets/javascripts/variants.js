@@ -10,7 +10,7 @@ var create_visualization = function() {
     var lane_height = 150;
     var lane_vertical_margin = 5;
     var domain_padding = 1000;
-    var exon_on_screen_percentage = 0.7;
+    var exon_on_screen_percentage = 0.55;
     var minimum_width = 2;
     //////////////////////////////////
 
@@ -49,16 +49,49 @@ var create_visualization = function() {
       var scale_size = VariantsApp.scale_stop - VariantsApp.scale_start;
 
       var exon_sizes_sum = 0.0;
+      var exon_utr_intersection_size_sum = 0;
+
+      var utr5_start = VariantsApp.utr5[0];
+      var utr5_stop = VariantsApp.utr5[1];
+      var utr3_start = VariantsApp.utr3[0];
+      var utr3_stop = VariantsApp.utr3[1];
 
       // adding up exon sizes
       for (var i = 0 ; i < data.exons.length ; i++) {
         var exon = data.exons[i];
+
+        if (exon.start >= utr5_stop && exon.stop <= utr3_start) {
+          // completely outside utrs
+        } else if (exon.stop <= utr5_stop || exon.start >= utr3_start) {
+          // completely inside utrs
+           exon_utr_intersection_size_sum += exon.stop - exon.start;
+        } else {
+          // intersecting with utrs
+          var intersection_start;
+          var intersection_stop;
+
+          if (exon.start < utr5_stop) {
+            intersection_start = exon.start;
+            intersection_stop = utr5_stop;
+          } else {
+            intersection_start = utr3_start;
+            intersection_stop = exon.stop;
+          }
+
+          exon_utr_intersection_size_sum += intersection_stop - intersection_start;
+        }
+
         exon_sizes_sum += exon.stop - exon.start;
         VariantsApp.exon_regions.push([exon.start, exon.stop])
       }
 
-      VariantsApp.exon_scale_factor = width * exon_on_screen_percentage / exon_sizes_sum;
-      VariantsApp.intron_scale_factor = width * (1 - exon_on_screen_percentage) / (scale_size - exon_sizes_sum);
+      var utr_sizes_sum = VariantsApp.utr5[1] - VariantsApp.utr5[0];
+      utr_sizes_sum += VariantsApp.utr3[1] - VariantsApp.utr3[0];
+
+      VariantsApp.exon_scale_factor = width * exon_on_screen_percentage / (exon_sizes_sum - exon_utr_intersection_size_sum);
+      VariantsApp.intron_scale_factor = width * (1 - exon_on_screen_percentage) / (scale_size - exon_sizes_sum + exon_utr_intersection_size_sum);
+      VariantsApp.utr_scale_factor = VariantsApp.intron_scale_factor;
+
     }
 
     calculate_scale_factors(data);
@@ -66,27 +99,98 @@ var create_visualization = function() {
     var x_scale = function(x) {
       var start = VariantsApp.scale_start;
       var passed_exons_size = 0;
+      var passed_utr_size = 0;
+
+      var utr5_start = VariantsApp.utr5[0];
+      var utr5_stop = VariantsApp.utr5[1];
+      var utr3_start = VariantsApp.utr3[0];
+      var utr3_stop = VariantsApp.utr3[1];
 
       for (var i = 0 ; i < VariantsApp.exon_regions.length ; i++) {
         var exon = VariantsApp.exon_regions[i];
         var exon_start = exon[0];
         var exon_stop = exon[1];
+        var utr_intersection_size = 0;
 
         if (x >= exon_stop) {
           // after whole exon
-          passed_exons_size += exon_stop - exon_start;
+
+          if (exon_start >= utr5_stop && exon_stop <= utr3_start) {
+            // completely outside utrs
+          } else if (exon_stop <= utr5_stop || exon_start >= utr3_start) {
+            // completely inside utrs
+            utr_intersection_size += exon_stop - exon_start;
+          } else {
+            // intersecting with utrs
+            var intersection_start;
+            var intersection_stop;
+
+            if (exon_start < utr5_stop) {
+              intersection_start = exon_start;
+              intersection_stop = utr5_stop;
+            } else {
+              intersection_start = utr3_start;
+              intersection_stop = exon_stop;
+            }
+
+            utr_intersection_size = intersection_stop - intersection_start;
+          }
+
+          passed_exons_size += exon_stop - exon_start - utr_intersection_size;
         } else if (x <= exon_start) {
           // before whole exon
           break;
         } else {
           // inside exon
-          passed_exons_size += x - exon_start;
+
+          if (exon_start >= utr5_stop && x <= utr3_start) {
+            // completely outside utrs
+          } else if (x <= utr5_stop || exon_start >= utr3_start) {
+            // completely inside utrs
+            utr_intersection_size += x - exon_start;
+          } else {
+            // intersecting with utrs
+            var intersection_start;
+            var intersection_stop;
+
+            if (exon_start < utr5_stop) {
+              intersection_start = exon_start;
+              intersection_stop = x;
+            } else {
+              intersection_start = utr3_start;
+              intersection_stop = x;
+            }
+
+            utr_intersection_size = intersection_stop - intersection_start;
+          }
+
+          passed_exons_size += x - exon_start - utr_intersection_size;
           break;
         }
       }
 
-      var passed_introns_size = x - start - passed_exons_size;
-      return passed_exons_size * VariantsApp.exon_scale_factor + passed_introns_size * VariantsApp.intron_scale_factor;
+      var utrs = [VariantsApp.utr5, VariantsApp.utr3];
+
+      for (var i = 0 ; i < utrs.length ; i++) {
+        var utr = utrs[i];
+        var utr_start = utr[0];
+        var utr_stop = utr[1];
+
+        if (x >= utr_stop) {
+          // after whole utr
+          passed_utr_size += utr_stop - utr_start;
+        } else if (x <= utr_start) {
+          // before whole utr
+          break;
+        } else {
+          // inside utr
+          passed_utr_size += x - utr_start;
+          break;
+        }
+      }
+
+      var passed_introns_size = x - start - passed_exons_size - passed_utr_size;
+      return passed_exons_size * VariantsApp.exon_scale_factor + passed_introns_size * VariantsApp.intron_scale_factor + passed_utr_size * VariantsApp.utr_scale_factor;
     }
 
     var lane_y_position = function(lane_index) {
