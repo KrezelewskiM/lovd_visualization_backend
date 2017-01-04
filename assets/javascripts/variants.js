@@ -1,7 +1,7 @@
 var create_visualization = function() {
   var dataset;
   var transcript_id = getUrlParameter('transcript');
-  var base_url = "http://localhost/src/variants/";
+  var base_url = "http://lovdbackend.ngrok.io/src/variants/";
 
   var plot_data = function(data) {
     // Change these to fine-tune graph
@@ -15,6 +15,7 @@ var create_visualization = function() {
     //////////////////////////////////
 
     var calculate_height = function(lanes_count) {
+
       return lanes_count * (lane_height + 2 * lane_vertical_margin);
     }
 
