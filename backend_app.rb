@@ -35,10 +35,6 @@ class BackendApp < Sinatra::Base
     haml :variants
   end
 
-  get "/variants_upgrade" do
-    haml :variants_upgrade
-  end
-
   namespace "/api" do
     get "/detail" do
       content_type :json

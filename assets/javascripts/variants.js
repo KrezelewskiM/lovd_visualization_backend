@@ -1,3 +1,5 @@
+// DEPRECATED
+
 var create_visualization = function() {
   var dataset;
   var transcript_id = getUrlParameter('transcript');
