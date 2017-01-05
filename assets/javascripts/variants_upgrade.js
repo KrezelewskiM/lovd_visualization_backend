@@ -1,12 +1,13 @@
 var create_visualization = function() {
   var dataset;
   var transcript_id = getUrlParameter('transcript');
+  var y_scale_type = getUrlParameter('scale');
 
   var plot_data = function(data) {
     // Change these to fine-tune graph
     var domain_padding = 1000;
-    var margin = { top: 20, right: 10, bottom: 20, left: 10 };
-    var width = 1200 - margin.left - margin.right;
+    var margin = { top: 20, right: 0, bottom: 20, left: 30 };
+    var width = 1100 - margin.left - margin.right;
     var lane_height = 150;
     var lane_vertical_margin = 5;
     var exon_on_screen_percentage = 0.65;
@@ -15,10 +16,12 @@ var create_visualization = function() {
     var bold_tick_interval = 5;
     //////////////////////////////////
 
+    var allowed_types = ["del", "subst", "dup", "delins", "ins", "inv", "con"];
+
     // *** UTIL FUNCTIONS *** //
 
     var calculate_height = function(lanes_count) {
-      return lanes_count * (lane_height + 2 * lane_vertical_margin);
+      return lanes_count * (lane_height + 2 * lane_vertical_margin) + 100;
     }
 
     var lane_y_position = function(lane_index) {
@@ -32,10 +35,28 @@ var create_visualization = function() {
       return y + lane_box_height / 2;
     }
 
+    var change_lane_y_position = function(lane_index) {
+      var lane_box_height = lane_height + 2 * lane_vertical_margin;
+      return lane_y_position(lane_index) + lane_box_height / 2;
+    }
+
+    var include = function(arr, obj) {
+      return (arr.indexOf(obj) != -1);
+    }
+
     // ********************** //
 
     var VariantsApp = {};
-    VariantsApp.lanes_count = 3;
+    VariantsApp.lanes_count = 2;
+    VariantsApp.changes = {
+      "del": [],
+      "subst": [],
+      "dup": [],
+      "delins": [],
+      "ins": [],
+      "inv": [],
+      "con": []
+    }
 
     var height = calculate_height(VariantsApp.lanes_count);
     var exon_height = Math.round(lane_height * 0.75);
@@ -194,6 +215,17 @@ var create_visualization = function() {
       .append("g")
         .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
 
+    svg.append('defs')
+      .append('pattern')
+        .attr('id', 'diagonalHatch')
+        .attr('patternUnits', 'userSpaceOnUse')
+        .attr('width', 4)
+        .attr('height', 4)
+      .append('path')
+        .attr('d', 'M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2')
+        .attr('stroke', '#FDEF35')
+        .attr('stroke-width', 1);
+
     var draw_rectangle = function(x, y, width, height, rect_class, url) {
       var parent_container = svg;
 
@@ -209,6 +241,18 @@ var create_visualization = function() {
           .attr("y", y)
           .attr("width", width)
           .attr("height", height);
+    }
+
+    var draw_stripes = function(x, y, width, height, rect_class) {
+      var parent_container = svg;
+
+      parent_container.append("rect")
+          .attr("class", rect_class)
+          .attr("x", x)
+          .attr("y", y)
+          .attr("width", width)
+          .attr("height", height)
+          .style("fill", "url(#diagonalHatch)")
     }
 
     var plot_graph_element = function(element, lane_y, element_height, element_class, is_change) {
@@ -290,6 +334,180 @@ var create_visualization = function() {
     // Plot utrs
     plot_graph_element(data.utr5, exon_lane_y, utr_height, "utr", false);
     plot_graph_element(data.utr3, exon_lane_y, utr_height, "utr", false);
+
+
+    // Plot changes
+
+    if (y_scale_type == "lin") {
+      var y_scale = d3.scaleLinear()
+        .domain([0, 500])
+        .range([0, lane_height]);
+
+      var reversed_scale = d3.scaleLinear()
+        .domain([500, 0])
+        .range([0, lane_height]);
+
+      var scale_min = 0;
+    } else {
+      var y_scale = d3.scaleLog()
+        .base(Math.E)
+        .domain([1, 500])
+        .range([5, lane_height]);
+
+      var reversed_scale = d3.scaleLog()
+        .base(Math.E)
+        .domain([500, 1])
+        .range([5, lane_height]);
+
+      var scale_min = 5;
+    }
+
+
+    var extract_changes = function() {
+      for (var i = 0 ; i < data.changes.length ; i++) {
+        var change = data.changes[i];
+        if (!include(allowed_types, change.type) || change.start == null || change.stop == null) {
+          continue;
+        }
+
+        if (change.stop < VariantsApp.scale_start || change.start > VariantsApp.scale_stop) {
+          continue;
+        }
+
+        var x = 0;
+        if (change.start == change.stop) {
+          x = 2;
+        }
+
+        VariantsApp.changes[change.type].push([change.start - x, change.stop + x, change.frameshift]);
+      }
+    }
+
+    var draw_histogram = function(start, end, height, y, type) {
+      var x1 = x_scale(start);
+      var x2 = x_scale(end);
+
+      if (x1 < 0) {
+        x1 = 0;
+      }
+
+      var scaled_width = x2 - x1;
+
+      if (scaled_width < minimum_width) {
+        scaled_width = minimum_width;
+      }
+      var scaled_height = 0;
+      if (height > 0) {
+        scaled_height = y_scale(height);
+      }
+
+      if (type == "frameshift") {
+        draw_stripes(x1, y - scaled_height, scaled_width, scaled_height, type);
+      } else {
+        draw_rectangle(x1, y - scaled_height, scaled_width, scaled_height, type, false);
+      }
+    }
+
+    var draw_changes = function() {
+      for (var i = 0 ; i < allowed_types.length ; i++) {
+        var type = allowed_types[i];
+
+        if (VariantsApp.changes[type].length > 0) {
+          // Add lane for change type
+          lane_index = VariantsApp.lanes_count;
+          VariantsApp.lanes_count = VariantsApp.lanes_count + 1;
+
+          var new_height = calculate_height(VariantsApp.lanes_count);
+          d3.select("#variants-visualization svg").attr("height", new_height);
+          y = change_lane_y_position(lane_index);
+
+          svg.append("line")
+            .attr("x1", 0)
+            .attr("y1", y)
+            .attr("x2", width)
+            .attr("y2", y);
+
+          var axis = d3.axisLeft(reversed_scale).tickFormat(d3.format(".0f"));
+
+          svg.append("g")
+            .attr("transform", "translate(0," + (y - lane_height - scale_min) + ")")
+            .call(axis);
+
+          // Emit pairs
+          var pairs = [];
+          var changes_array = VariantsApp.changes[type];
+
+          for (var j = 0 ; j < changes_array.length ; j++) {
+            var change = changes_array[j];
+            var frameshift = 0;
+
+            var start = change[0];
+            var end = change[1];
+
+            if (start < VariantsApp.scale_start) {
+              start = VariantsApp.scale_start;
+            }
+
+            if (end > VariantsApp.scale_stop) {
+              end = VariantsApp.scale_stop;
+            }
+
+            if (change[2]) {
+              frameshift = 1;
+            }
+
+            pairs.push([start, 1, frameshift]);
+            pairs.push([end, -1, -1 * frameshift]);
+          }
+
+          pairs.sort(function(a, b) { return a[0] - b[0] });
+
+          var h = 0;
+          var frameshift_h = 0;
+          var start = pairs[0][0];
+          var frameshift_start = start;
+
+          var stripes_queue = [];
+
+          while (pairs.length > 0) {
+            var current_pair = pairs.shift();
+
+            var l = current_pair[0];
+            var frameshift_l = current_pair[0];
+
+            var h_l = h + current_pair[1];
+            var frameshift_h_l = frameshift_h + current_pair[2];
+
+            while (pairs.length > 0 && pairs[0][0] == l) {
+              var next_pair = pairs.shift();
+              h_l += next_pair[1];
+              frameshift_h_l += next_pair[2];
+            }
+
+            if (h_l != h) {
+              draw_histogram(start, l, h, y, type);
+              start = l;
+            }
+
+            if (frameshift_h_l != h) {
+              stripes_queue.push([start, frameshift_l, frameshift_h, y])
+              frameshift_start = frameshift_l;
+            }
+
+            h = h_l;
+            frameshift_h = frameshift_h_l;
+          }
+
+          for (var k = 0 ; k < stripes_queue.length ; k++) {
+            var values = stripes_queue[k];
+            draw_histogram(values[0], values[1], values[2], values[3], "frameshift");
+          }
+        }
+      }
+    }
+
+    extract_changes();
+    draw_changes();
 
     // *************** //
   }

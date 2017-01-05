@@ -45,10 +45,10 @@ module Services
     end
 
     def extract_changes
-      transcript.variants.includes(:variants_on_transcript).all.map do |variant|
+      transcript.variants.order(position_g_start: :asc).includes(:variants_on_transcript).all.map do |variant|
         {
-          start: variant.position_g_start,
-          stop: variant.position_g_end,
+          start: [variant.position_g_start, variant.position_g_end].compact.min,
+          stop: [variant.position_g_start, variant.position_g_end].compact.max,
           type: variant.type,
           url: "#{variant.id}##{variant.variants_on_transcript.transcriptid}",
           frameshift: !!(variant.variants_on_transcript["VariantOnTranscript/Protein"] =~ /.*fs.*/)
